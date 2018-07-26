@@ -32,6 +32,12 @@ type config struct {
 		// package maps, but they don't seem to be as useful. Likely,
 		// overriding the package map is more useful but includes happen
 		// project-wide.
+
+		Files map[string]struct {
+			ImportPath string `toml:"import_path"`
+			Output     string
+			Relative   bool
+		}
 	}
 
 	Descriptors []struct {

@@ -62,6 +62,11 @@ func main() {
 		Prefixes  []string
 		Generator string
 		Plugins   *[]string
+		Files     map[string]struct {
+			ImportPath string `toml:"import_path"`
+			Output     string
+			Relative   bool
+		}
 	}{}
 	for _, override := range c.Overrides {
 		for _, prefix := range override.Prefixes {
@@ -146,6 +151,7 @@ func main() {
 			log.Fatalln(err)
 		}
 
+		protocs := []protocCmd{protoc}
 		if override, ok := overrides[importDirPath]; ok {
 			// selectively apply the overrides to the protoc structure.
 			if override.Generator != "" {
@@ -154,6 +160,37 @@ func main() {
 
 			if override.Plugins != nil {
 				protoc.Plugins = *override.Plugins
+			}
+
+			// update with any overrides
+			protocs[0] = protoc
+
+			if len(override.Files) > 0 {
+				files := make([]string, 0, len(protoc.Files))
+				for _, f := range protoc.Files {
+					if fileOverride, exists := override.Files[filepath.Base(f)]; exists {
+						newProto := protoc
+						if fileOverride.ImportPath != "" {
+							newProto.ImportPath = fileOverride.ImportPath
+						}
+						newProto.Files = []string{f}
+						if fileOverride.Output != "" {
+							newProto.OutputDir = fileOverride.Output
+						}
+						newProto.Relative = fileOverride.Relative
+						if newProto.Relative {
+							newProto.Includes = append([]string{filepath.Dir(f)}, newProto.Includes...)
+							newProto.Files = []string{filepath.Base(f)}
+						}
+						protocs = append(protocs, newProto)
+					} else {
+						files = append(files, f)
+					}
+				}
+
+				// update the files that need to be processed with the default
+				// override
+				protocs[0].Files = files
 			}
 		}
 
@@ -167,37 +204,39 @@ func main() {
 			if err != nil {
 				log.Fatalln(err)
 			}
-			protoc.Descriptors = dfp.Name()
+			protocs[0].Descriptors = dfp.Name()
 		}
 
-		arg, err := protoc.mkcmd()
-		if err != nil {
-			log.Fatalln(err)
-		}
-
-		if !quiet {
-			fmt.Println(arg)
-		}
-
-		if dryRun {
-			continue
-		}
-
-		if err := protoc.run(); err != nil {
-			if quiet {
-				log.Println(arg)
+		for _, protoc := range protocs {
+			arg, err := protoc.mkcmd()
+			if err != nil {
+				log.Fatalln(err)
 			}
-			if err, ok := err.(*exec.ExitError); ok {
-				if status, ok := err.Sys().(syscall.WaitStatus); ok {
-					os.Exit(status.ExitStatus()) // proxy protoc exit status
+
+			if !quiet {
+				fmt.Println(arg)
+			}
+
+			if dryRun {
+				continue
+			}
+
+			if err := protoc.run(); err != nil {
+				if quiet {
+					log.Println(arg)
 				}
-			}
+				if err, ok := err.(*exec.ExitError); ok {
+					if status, ok := err.Sys().(syscall.WaitStatus); ok {
+						os.Exit(status.ExitStatus()) // proxy protoc exit status
+					}
+				}
 
-			log.Fatalln(err)
+				log.Fatalln(err)
+			}
 		}
 
 		if genDescriptors {
-			desc, err := readDesc(protoc.Descriptors)
+			desc, err := readDesc(protocs[0].Descriptors)
 			if err != nil {
 				log.Fatalln(err)
 			}

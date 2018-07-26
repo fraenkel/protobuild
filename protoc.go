@@ -23,7 +23,7 @@ var (
 	{{- range $proto, $gopkg := .PackageMap -}},M
 		{{- $proto}}={{$gopkg -}}
 	{{- end -}}
-	:{{- .OutputDir }}
+	{{- if .Relative }},paths=source_relative{{- end }}:{{- .OutputDir }}
 	{{- range .Files}} {{.}}{{end -}}
 `))
 )
@@ -38,6 +38,7 @@ type protocCmd struct {
 	PackageMap  map[string]string
 	Files       []string
 	OutputDir   string
+	Relative    bool
 }
 
 func (p *protocCmd) mkcmd() (string, error) {
